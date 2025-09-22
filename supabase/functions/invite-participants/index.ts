@@ -148,39 +148,69 @@ serve(async (req) => {
 
         results.created++;
 
-        // Create user in Supabase Auth and send invitation email
+        // Create user in Supabase Auth (without sending email)
         try {
-          const { data: authData, error: authError } = await supabaseAdmin.auth.admin.inviteUserByEmail(
+          const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
             email,
-            {
-              redirectTo: `http://localhost:3001/join`,
-              data: {
-                full_name: fullName || '',
-                webinar_id: meetingNumber
-              }
+            email_confirm: true, // Auto-confirm email to skip verification
+            user_metadata: {
+              full_name: fullName || '',
+              webinar_id: meetingNumber
             }
-          );
+          });
 
           if (authError) {
-            console.error(`Auth invitation error for ${email}:`, authError);
-            results.errors.push(`Failed to send invitation to ${email}: ${authError.message}`);
+            console.error(`Auth user creation error for ${email}:`, authError);
+            results.errors.push(`Failed to create user ${email}: ${authError.message}`);
 
-            // Log the failed invitation attempt
+            // Log the failed user creation
             await supabaseAdmin.from("access_logs").insert({
               invitee_id: newInvitee.id,
-              event_type: "invitation_failed",
+              event_type: "user_creation_failed",
               meta: {
                 error: authError.message,
                 email,
                 admin_user: user.email
               },
             });
-          } else {
+            continue;
+          }
+
+          // Send invitation email via SendGrid
+          try {
+            const loginUrl = `${Deno.env.get("SITE_URL") || "http://localhost:3001"}/login?email=${encodeURIComponent(email)}`;
+
+            const emailResponse = await fetch(`${Deno.env.get("SUPABASE_URL")}/functions/v1/send-email`, {
+              method: 'POST',
+              headers: {
+                'Authorization': req.headers.get("Authorization")!,
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({
+                type: 'invitation',
+                to: email,
+                templateData: {
+                  inviteeName: fullName,
+                  loginUrl,
+                  meetingDate: null, // Can be set later
+                  meetingTime: null  // Can be set later
+                }
+              }),
+            });
+
+            if (!emailResponse.ok) {
+              const errorText = await emailResponse.text();
+              throw new Error(`Email sending failed: ${errorText}`);
+            }
+
+            const emailResult = await emailResponse.json();
+
             results.invited++;
             results.details.push({
               email,
               status: 'invited',
-              message: 'Invitation sent successfully'
+              message: 'User created and invitation email sent successfully',
+              messageId: emailResult.messageId
             });
 
             // Log successful invitation
@@ -190,10 +220,28 @@ serve(async (req) => {
               meta: {
                 email,
                 full_name: fullName,
+                admin_user: user.email,
+                sendgrid_message_id: emailResult.messageId,
+                login_url: loginUrl
+              },
+            });
+
+          } catch (emailError: any) {
+            console.error(`Email sending error for ${email}:`, emailError);
+            results.errors.push(`User created but email failed for ${email}: ${emailError.message}`);
+
+            // Log the failed email attempt
+            await supabaseAdmin.from("access_logs").insert({
+              invitee_id: newInvitee.id,
+              event_type: "email_failed",
+              meta: {
+                error: emailError.message,
+                email,
                 admin_user: user.email
               },
             });
           }
+
         } catch (authErr: any) {
           console.error(`Auth error for ${email}:`, authErr);
           results.errors.push(`Authentication error for ${email}: ${authErr.message}`);

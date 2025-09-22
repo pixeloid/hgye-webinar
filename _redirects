@@ -1,0 +1,5 @@
+# Redirect all requests to Nuxt server function
+/*    /.netlify/functions/server   200
+
+# API routes handled by Nuxt
+/api/*    /.netlify/functions/server   200

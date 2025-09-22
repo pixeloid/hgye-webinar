@@ -136,21 +136,76 @@ serve(async (req) => {
         meta: { deviceHash, maskedEmail: email.replace(/^(.{2}).*@/, "$1***@") },
       });
 
-      // In production, send email here
-      // For now, we'll include the OTP in the response for testing
-      console.log(`OTP for ${email}: ${otp}`);
+      // Send OTP email via SendGrid
+      try {
+        const emailResponse = await fetch(`${Deno.env.get("SUPABASE_URL")}/functions/v1/send-email`, {
+          method: 'POST',
+          headers: {
+            'Authorization': req.headers.get("Authorization")!,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            type: 'otp',
+            to: email,
+            templateData: {
+              otpCode: otp,
+              expiryMinutes: 10
+            }
+          }),
+        });
 
-      return new Response(
-        JSON.stringify({
-          success: true,
-          message: "OTP kód elküldve az e-mail címedre",
-          // Remove this in production!
-          debug_otp: otp,
-        }),
-        {
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        let emailResult = null;
+        let debugOtp = null;
+
+        if (!emailResponse.ok) {
+          console.error(`Email sending failed for ${email}: ${await emailResponse.text()}`);
+          // In development, still provide debug OTP if email fails
+          debugOtp = Deno.env.get("NODE_ENV") === "development" ? otp : null;
+        } else {
+          emailResult = await emailResponse.json();
+          // In development, provide debug OTP
+          debugOtp = Deno.env.get("NODE_ENV") === "development" ? otp : null;
         }
-      );
+
+        return new Response(
+          JSON.stringify({
+            success: true,
+            message: "OTP kód elküldve az e-mail címedre",
+            messageId: emailResult?.messageId,
+            // Only include in development
+            ...(debugOtp && { debug_otp: debugOtp }),
+          }),
+          {
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          }
+        );
+
+      } catch (emailError: any) {
+        console.error(`OTP email sending error for ${email}:`, emailError);
+
+        // Still return success but log the email failure
+        await supabaseAdmin.from("access_logs").insert({
+          invitee_id: invitee.id,
+          event_type: "otp_email_failed",
+          meta: {
+            deviceHash,
+            maskedEmail: email.replace(/^(.{2}).*@/, "$1***@"),
+            error: emailError.message
+          },
+        });
+
+        return new Response(
+          JSON.stringify({
+            success: true,
+            message: "OTP kód elküldve az e-mail címedre",
+            // In development, provide OTP even if email fails
+            ...(Deno.env.get("NODE_ENV") === "development" && { debug_otp: otp }),
+          }),
+          {
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          }
+        );
+      }
 
     } else if (action === "verify") {
       // Verify OTP and transfer session
