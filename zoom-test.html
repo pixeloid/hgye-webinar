@@ -1,0 +1,63 @@
+
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Zoom SDK Test</title>
+    <link type="text/css" rel="stylesheet" href="https://source.zoom.us/3.9.0/css/bootstrap.css" />
+    <link type="text/css" rel="stylesheet" href="https://source.zoom.us/3.9.0/css/react-select.css" />
+</head>
+<body>
+    <div id="meetingSDKElement"></div>
+
+    <script src="https://source.zoom.us/3.9.0/lib/vendor/react.min.js"></script>
+    <script src="https://source.zoom.us/3.9.0/lib/vendor/react-dom.min.js"></script>
+    <script src="https://source.zoom.us/3.9.0/lib/vendor/redux.min.js"></script>
+    <script src="https://source.zoom.us/3.9.0/lib/vendor/redux-thunk.min.js"></script>
+    <script src="https://source.zoom.us/3.9.0/lib/vendor/lodash.min.js"></script>
+    <script src="https://source.zoom.us/zoom-meeting-3.9.0.min.js"></script>
+
+    <script>
+        ZoomMtg.setZoomJSLib('https://source.zoom.us/3.9.0/lib', '/av');
+        ZoomMtg.preLoadWasm();
+        ZoomMtg.prepareWebSDK();
+
+        const meetingConfig = {
+  "signature": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJQZW1uSWNVRFFvU2hqNnpHajFrcFd3IiwiZXhwIjoxNzU4NTc4NDA4LCJpYXQiOjE3NTg1NzEyMDgsImF1ZCI6Inpvb20iLCJhcHBLZXkiOiJQZW1uSWNVRFFvU2hqNnpHajFrcFd3IiwidG9rZW5FeHAiOjE3NTg1Nzg0MDgsImFsZyI6IkhTMjU2In0.xoUsuIqZltaRCvrqiTrjcXeq7BLt-Ohu4cBc-3pDhS8",
+  "sdkKey": "PemnIcUDQoShj6zGj1kpWw",
+  "meetingNumber": "82958583911",
+  "userName": "Test User",
+  "userEmail": "test@example.com",
+  "passWord": ""
+};
+
+        console.log('Meeting config:', meetingConfig);
+
+        ZoomMtg.init({
+            leaveUrl: 'http://localhost:3001',
+            isSupportAV: true,
+            success: function() {
+                console.log('Zoom init success');
+
+                ZoomMtg.join({
+                    signature: meetingConfig.signature,
+                    sdkKey: meetingConfig.sdkKey,
+                    meetingNumber: meetingConfig.meetingNumber,
+                    userName: meetingConfig.userName,
+                    userEmail: meetingConfig.userEmail,
+                    passWord: meetingConfig.passWord,
+                    success: function(res) {
+                        console.log('Zoom join success', res);
+                    },
+                    error: function(res) {
+                        console.log('Zoom join error', res);
+                    }
+                });
+            },
+            error: function(res) {
+                console.log('Zoom init error', res);
+            }
+        });
+    </script>
+</body>
+</html>
+  
