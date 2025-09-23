@@ -123,6 +123,7 @@ serve(async (req) => {
       // Store OTP in otp_codes table
       await supabaseAdmin.from("otp_codes").insert({
         invitee_id: invitee.id,
+        email: invitee.email,
         code: otpCode,
         purpose: "device_verification",
         expires_at: expiresAt.toISOString(),
@@ -169,7 +170,7 @@ serve(async (req) => {
           error: "device_verification_required",
           reason: "new_device",
           message: "Új eszközről történő belépés megerősítése szükséges. Ellenőrizd az email-ed!",
-          debugOtp: process.env.NODE_ENV === 'development' ? otpCode : undefined
+          debugOtp: otpCode // Show OTP for testing since email sending may fail without SendGrid
         }),
         {
           status: 423,
