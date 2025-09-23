@@ -37,36 +37,41 @@ serve(async (req) => {
   }
 
   try {
-    // Initialize Supabase client
-    const supabase = createClient(
-      Deno.env.get("SUPABASE_URL")!,
-      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
-      {
-        global: {
-          headers: {
-            Authorization: req.headers.get("Authorization")!,
-          },
-        },
-        auth: {
-          persistSession: false,
-        },
-      }
-    );
+    // Check if the request is from a service role (internal function call)
+    const authHeader = req.headers.get("Authorization");
+    const isServiceRole = authHeader && authHeader.includes(Deno.env.get("SUPABASE_SERVICE_ROLE_KEY"));
 
-    // Get the current user for authentication
-    const {
-      data: { user },
-      error: userErr,
-    } = await supabase.auth.getUser();
-
-    if (userErr || !user) {
-      return new Response(
-        JSON.stringify({ error: "unauthorized" }),
+    if (!isServiceRole) {
+      // For non-service role requests, check user authentication
+      const supabase = createClient(
+        Deno.env.get("SUPABASE_URL")!,
+        Deno.env.get("SUPABASE_ANON_KEY")!,
         {
-          status: 401,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          global: {
+            headers: {
+              Authorization: authHeader!,
+            },
+          },
+          auth: {
+            persistSession: false,
+          },
         }
       );
+
+      const {
+        data: { user },
+        error: userErr,
+      } = await supabase.auth.getUser();
+
+      if (userErr || !user) {
+        return new Response(
+          JSON.stringify({ error: "unauthorized" }),
+          {
+            status: 401,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          }
+        );
+      }
     }
 
     const { type, to, templateData } = await req.json();
@@ -103,8 +108,18 @@ serve(async (req) => {
     // Send email via SendGrid
     const result = await sendEmailViaSendGrid(emailTemplate, sendGridApiKey);
 
-    // Log the email sending
-    await supabase.from("access_logs").insert({
+    // Log the email sending with admin Supabase client
+    const supabaseAdmin = createClient(
+      Deno.env.get("SUPABASE_URL")!,
+      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
+      {
+        auth: {
+          persistSession: false,
+        },
+      }
+    );
+
+    await supabaseAdmin.from("access_logs").insert({
       event_type: "email_sent",
       meta: {
         type,
