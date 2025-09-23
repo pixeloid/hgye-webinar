@@ -157,12 +157,15 @@ serve(async (req) => {
 });
 
 function generateInvitationEmail(to: string, data: any, fromEmail: string, fromName: string): EmailTemplate {
-  const { inviteeName, loginUrl, meetingDate, meetingTime } = data;
+  const { inviteeName, loginUrl, accessToken, meetingDate, meetingTime } = data;
+
+  // Create a short identifier from the access token (first 8 characters)
+  const linkId = accessToken ? accessToken.substring(0, 8).toUpperCase() : 'XXXXX';
 
   return {
     to,
     from: fromEmail,
-    subject: "Tájékoztatás az oltásmegtagadók jogi támadásaival szembeni eljárásrendről - HGYE webinár",
+    subject: `LINK  - Tájékoztatás az oltásmegtagadók jogi támadásaival szembeni eljárásrendről - HGYE webinár`,
     html: `
       <!DOCTYPE html>
       <html>
@@ -175,7 +178,7 @@ function generateInvitationEmail(to: string, data: any, fromEmail: string, fromN
           .container { max-width: 600px; margin: 0 auto; padding: 20px; }
           .header { background: #0066cc; color: white; padding: 20px; text-align: center; }
           .content { padding: 20px; background: #ffffff; border: 1px solid #ddd; }
-          .button { display: inline-block; background: #0066cc; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; margin: 20px 0; font-weight: bold; }
+          .button { display: inline-block; background: #0066cc; color: white !important; padding: 12px 24px; text-decoration: none; border-radius: 5px; margin: 20px 0; font-weight: bold; }
           .footer { text-align: center; color: #666; font-size: 12px; margin-top: 20px; }
           .important { background: #fffbe6; border-left: 4px solid #ffcc00; padding: 15px; margin: 20px 0; }
         </style>
@@ -208,14 +211,6 @@ function generateInvitationEmail(to: string, data: any, fromEmail: string, fromN
             <p><strong>Üdvözlettel,<br>
             HGYE-vezetőség</strong></p>
 
-            <hr style="margin: 30px 0; border: none; border-top: 1px solid #ddd;">
-
-            <p style="font-size: 12px; color: #666;">
-              <strong>Technikai információk:</strong><br>
-              • Ez a link csak Önnek szól, ne ossza meg senkivel<br>
-              • Egy időben csak egy eszközről lehet bent<br>
-              • A link 30 napig érvényes
-            </p>
           </div>
           <div class="footer">
             <p>Ez egy automatikusan generált email. Kérjük, ne válaszoljon rá.</p>
@@ -240,11 +235,6 @@ function generateInvitationEmail(to: string, data: any, fromEmail: string, fromN
 
       Üdvözlettel,
       HGYE-vezetőség
-
-      Technikai információk:
-      • Ez a link csak Önnek szól, ne ossza meg senkivel
-      • Egy időben csak egy eszközről lehet bent
-      • A link 30 napig érvényes
     `
   };
 }

@@ -168,9 +168,6 @@
               {{ deviceVerifying ? 'Ellenőrzés...' : 'Eszköz megerősítése' }}
             </button>
 
-            <p v-if="debugDeviceOtp" class="text-xs text-gray-500 mt-2">
-              Debug: {{ debugDeviceOtp }}
-            </p>
 
             <div class="flex space-x-3 mt-4">
               <button
@@ -234,7 +231,6 @@ const debugOtp = ref('');
 // Device verification handling
 const deviceOtpCode = ref('');
 const deviceVerifying = ref(false);
-const debugDeviceOtp = ref('');
 
 // Session management
 let heartbeatInterval: NodeJS.Timeout | null = null;
@@ -409,10 +405,6 @@ async function requestZoomSignature() {
         console.log('Setting state to device_verification');
         state.value = 'device_verification';
         console.log('State after setting:', state.value);
-        // Store debug OTP if provided (development mode)
-        if (response.debugOtp) {
-          debugDeviceOtp.value = `Test OTP: ${response.debugOtp}`;
-        }
         console.log('Returning from device verification logic');
         return;
       }

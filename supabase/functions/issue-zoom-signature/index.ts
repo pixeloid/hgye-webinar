@@ -134,6 +134,7 @@ serve(async (req) => {
 
       // Send device verification email
       try {
+        console.log('Sending device verification email to:', invitee.email);
         const emailResponse = await fetch(`${Deno.env.get("SUPABASE_URL")}/functions/v1/send-email`, {
           method: 'POST',
           headers: {
@@ -151,8 +152,18 @@ serve(async (req) => {
           }),
         });
 
+        console.log('Device verification email response status:', emailResponse.status);
+
         if (!emailResponse.ok) {
-          console.error('Device verification email sending failed');
+          const errorText = await emailResponse.text();
+          console.error('Device verification email sending failed:', {
+            status: emailResponse.status,
+            statusText: emailResponse.statusText,
+            body: errorText
+          });
+        } else {
+          const emailResult = await emailResponse.json();
+          console.log('Device verification email sent successfully:', emailResult.messageId);
         }
       } catch (emailError) {
         console.error('Device verification email error:', emailError);
@@ -169,8 +180,7 @@ serve(async (req) => {
         JSON.stringify({
           error: "device_verification_required",
           reason: "new_device",
-          message: "Új eszközről történő belépés megerősítése szükséges. Ellenőrizd az email-ed!",
-          debugOtp: otpCode // Show OTP for testing since email sending may fail without SendGrid
+          message: "Új eszközről történő belépés megerősítése szükséges. Ellenőrizd az email-ed!"
         }),
         {
           status: 423,

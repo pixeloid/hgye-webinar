@@ -170,6 +170,7 @@ serve(async (req) => {
               templateData: {
                 inviteeName: fullName,
                 loginUrl,
+                accessToken,
                 meetingDate: null, // Can be set later
                 meetingTime: null  // Can be set later
               }
