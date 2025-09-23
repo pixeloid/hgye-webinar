@@ -25,31 +25,12 @@ serve(async (req) => {
       }
     );
 
-    // Initialize Supabase client for user context
-    const supabase = createClient(
-      Deno.env.get("SUPABASE_URL")!,
-      Deno.env.get("SUPABASE_ANON_KEY")!,
-      {
-        global: {
-          headers: {
-            Authorization: req.headers.get("Authorization")!,
-          },
-        },
-        auth: {
-          persistSession: false,
-        },
-      }
-    );
+    // Parse request body to get access token and session ID
+    const { accessToken, sessionId } = await req.json().catch(() => ({}));
 
-    // Get the current user
-    const {
-      data: { user },
-      error: userErr,
-    } = await supabase.auth.getUser();
-
-    if (userErr || !user) {
+    if (!accessToken) {
       return new Response(
-        JSON.stringify({ error: "unauthorized" }),
+        JSON.stringify({ error: "unauthorized", message: "Access token required" }),
         {
           status: 401,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' }
@@ -57,13 +38,11 @@ serve(async (req) => {
       );
     }
 
-    const email = user.email!;
-
-    // Get the invitee
+    // Get the invitee by access token
     const { data: invitee, error: inviteeError } = await supabaseAdmin
       .from("invitees")
-      .select("id")
-      .eq("email", email)
+      .select("id, email")
+      .eq("access_token", accessToken)
       .single();
 
     if (inviteeError || !invitee) {

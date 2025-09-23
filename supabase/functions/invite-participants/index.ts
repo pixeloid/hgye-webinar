@@ -128,14 +128,20 @@ serve(async (req) => {
           continue;
         }
 
-        // Create invitee record
+        // Generate unique access token for the invitee
+        const accessToken = crypto.randomUUID() + '-' + Date.now().toString(36);
+        const tokenExpiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000); // 30 days from now
+
+        // Create invitee record with access token
         const { data: newInvitee, error: inviteeError } = await supabaseAdmin
           .from("invitees")
           .insert({
             email,
             full_name: fullName || null,
             webinar_id: meetingNumber,
-            status: 'invited'
+            status: 'invited',
+            access_token: accessToken,
+            token_expires_at: tokenExpiresAt.toISOString()
           })
           .select()
           .single();
@@ -148,103 +154,72 @@ serve(async (req) => {
 
         results.created++;
 
-        // Create user in Supabase Auth (without sending email)
+        // Send invitation email with unique token link
         try {
-          const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
-            email,
-            email_confirm: true, // Auto-confirm email to skip verification
-            user_metadata: {
-              full_name: fullName || '',
-              webinar_id: meetingNumber
-            }
+          const loginUrl = `${Deno.env.get("SITE_URL") || "http://localhost:3001"}/join?token=${accessToken}`;
+
+          const emailResponse = await fetch(`${Deno.env.get("SUPABASE_URL")}/functions/v1/send-email`, {
+            method: 'POST',
+            headers: {
+              'Authorization': req.headers.get("Authorization")!,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              type: 'invitation',
+              to: email,
+              templateData: {
+                inviteeName: fullName,
+                loginUrl,
+                meetingDate: null, // Can be set later
+                meetingTime: null  // Can be set later
+              }
+            }),
           });
 
-          if (authError) {
-            console.error(`Auth user creation error for ${email}:`, authError);
-            results.errors.push(`Failed to create user ${email}: ${authError.message}`);
-
-            // Log the failed user creation
-            await supabaseAdmin.from("access_logs").insert({
-              invitee_id: newInvitee.id,
-              event_type: "user_creation_failed",
-              meta: {
-                error: authError.message,
-                email,
-                admin_user: user.email
-              },
-            });
-            continue;
+          if (!emailResponse.ok) {
+            const errorText = await emailResponse.text();
+            throw new Error(`Email sending failed: ${errorText}`);
           }
 
-          // Send invitation email via SendGrid
-          try {
-            const loginUrl = `${Deno.env.get("SITE_URL") || "http://localhost:3001"}/login?email=${encodeURIComponent(email)}`;
+          const emailResult = await emailResponse.json();
 
-            const emailResponse = await fetch(`${Deno.env.get("SUPABASE_URL")}/functions/v1/send-email`, {
-              method: 'POST',
-              headers: {
-                'Authorization': req.headers.get("Authorization")!,
-                'Content-Type': 'application/json',
-              },
-              body: JSON.stringify({
-                type: 'invitation',
-                to: email,
-                templateData: {
-                  inviteeName: fullName,
-                  loginUrl,
-                  meetingDate: null, // Can be set later
-                  meetingTime: null  // Can be set later
-                }
-              }),
-            });
+          results.invited++;
+          results.details.push({
+            email,
+            status: 'invited',
+            message: 'Invitee created and invitation email sent successfully',
+            messageId: emailResult.messageId,
+            accessToken: accessToken
+          });
 
-            if (!emailResponse.ok) {
-              const errorText = await emailResponse.text();
-              throw new Error(`Email sending failed: ${errorText}`);
-            }
-
-            const emailResult = await emailResponse.json();
-
-            results.invited++;
-            results.details.push({
+          // Log successful invitation
+          await supabaseAdmin.from("access_logs").insert({
+            invitee_id: newInvitee.id,
+            event_type: "invitation_sent",
+            meta: {
               email,
-              status: 'invited',
-              message: 'User created and invitation email sent successfully',
-              messageId: emailResult.messageId
-            });
+              full_name: fullName,
+              admin_user: user.email,
+              sendgrid_message_id: emailResult.messageId,
+              login_url: loginUrl,
+              access_token: accessToken
+            },
+          });
 
-            // Log successful invitation
-            await supabaseAdmin.from("access_logs").insert({
-              invitee_id: newInvitee.id,
-              event_type: "invitation_sent",
-              meta: {
-                email,
-                full_name: fullName,
-                admin_user: user.email,
-                sendgrid_message_id: emailResult.messageId,
-                login_url: loginUrl
-              },
-            });
+        } catch (emailError: any) {
+          console.error(`Email sending error for ${email}:`, emailError);
+          results.errors.push(`Invitee created but email failed for ${email}: ${emailError.message}`);
 
-          } catch (emailError: any) {
-            console.error(`Email sending error for ${email}:`, emailError);
-            results.errors.push(`User created but email failed for ${email}: ${emailError.message}`);
-
-            // Log the failed email attempt
-            await supabaseAdmin.from("access_logs").insert({
-              invitee_id: newInvitee.id,
-              event_type: "email_failed",
-              meta: {
-                error: emailError.message,
-                email,
-                admin_user: user.email
-              },
-            });
-          }
-
-        } catch (authErr: any) {
-          console.error(`Auth error for ${email}:`, authErr);
-          results.errors.push(`Authentication error for ${email}: ${authErr.message}`);
+          // Log the failed email attempt
+          await supabaseAdmin.from("access_logs").insert({
+            invitee_id: newInvitee.id,
+            event_type: "email_failed",
+            meta: {
+              error: emailError.message,
+              email,
+              admin_user: user.email
+            },
+          });
         }
 
       } catch (error: any) {

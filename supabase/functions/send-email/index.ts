@@ -93,6 +93,9 @@ serve(async (req) => {
       case 'reminder':
         emailTemplate = generateReminderEmail(to, templateData, fromEmail, fromName);
         break;
+      case 'device_verification':
+        emailTemplate = generateDeviceVerificationEmail(to, templateData, fromEmail, fromName);
+        break;
       default:
         throw new Error(`Unknown email type: ${type}`);
     }
@@ -144,48 +147,60 @@ function generateInvitationEmail(to: string, data: any, fromEmail: string, fromN
   return {
     to,
     from: fromEmail,
-    subject: "Meghívás a HGYE webináriumra",
+    subject: "Tájékoztatás az oltásmegtagadók jogi támadásaival szembeni eljárásrendről - HGYE webinár",
     html: `
       <!DOCTYPE html>
       <html>
       <head>
         <meta charset="utf-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Webinárium meghívás</title>
+        <title>HGYE Webinárium meghívás</title>
         <style>
           body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
           .container { max-width: 600px; margin: 0 auto; padding: 20px; }
-          .header { background: #4F46E5; color: white; padding: 20px; text-align: center; }
-          .content { padding: 20px; background: #f9f9f9; }
-          .button { display: inline-block; background: #4F46E5; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; margin: 20px 0; }
+          .header { background: #0066cc; color: white; padding: 20px; text-align: center; }
+          .content { padding: 20px; background: #ffffff; border: 1px solid #ddd; }
+          .button { display: inline-block; background: #0066cc; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; margin: 20px 0; font-weight: bold; }
           .footer { text-align: center; color: #666; font-size: 12px; margin-top: 20px; }
+          .important { background: #fffbe6; border-left: 4px solid #ffcc00; padding: 15px; margin: 20px 0; }
         </style>
       </head>
       <body>
         <div class="container">
           <div class="header">
-            <h1>🎓 HGYE Webinárium</h1>
+            <h1>HGYE Webinárium</h1>
           </div>
           <div class="content">
-            <h2>Kedves ${inviteeName || 'Résztvevő'}!</h2>
-            <p>Meghívjuk a HGYE webináriumra!</p>
+            <h2>Kedves Kolléga!</h2>
 
-            ${meetingDate ? `<p><strong>📅 Dátum:</strong> ${meetingDate}</p>` : ''}
-            ${meetingTime ? `<p><strong>🕐 Időpont:</strong> ${meetingTime}</p>` : ''}
+            <p>Köszönjük jelentkezését a ma <strong>(2025.09.23.), 18.00 órakor</strong> kezdődő <strong>"Tájékoztatás az oltásmegtagadók jogi támadásaival szembeni eljárásrendről"</strong> című HGYE webinárra, amelynek csatlakozási linkjét alább küldjük.</p>
 
-            <p>A webináriumhoz való csatlakozáshoz kattintson az alábbi linkre:</p>
+            <div style="text-align: center; margin: 30px 0;">
+              <a href="${loginUrl}" class="button">Csatlakozás a webináriumhoz</a>
+            </div>
 
-            <a href="${loginUrl}" class="button">Belépés a webináriumba</a>
+            <div class="important">
+              <h3>Fontos tudnivalók a webinárral kapcsolatban:</h3>
+              <ul>
+                <li>A felületre történő csatlakozáskor/bejelentkezéskor kérjük, a <strong>teljes nevét adja meg</strong>.</li>
+                <li>Kérjük, a <strong>mikrofont tartsa kikapcsolva</strong>, végig a webinár alatt.</li>
+                <li>Amennyiben kérdése van az elhangzott előadásokkal kapcsolatban, kérjük, hogy a <strong>hgye@hgye.hu</strong> címünkre küldje meg, és eljuttatjuk az előadókhoz megválaszolásra.</li>
+              </ul>
+            </div>
 
-            <p><strong>Fontos tudnivalók:</strong></p>
-            <ul>
-              <li>A belépési link személyre szóló és nem továbbítható</li>
-              <li>Egy időben csak egy eszközről lehet bejelentkezni</li>
-              <li>Kérjük, időben csatlakozzon a webináriumhoz</li>
-            </ul>
+            <p>Bízunk benne, hogy a webináron elhangzó előadások az Ön számára is hasznos információkat fognak tartalmazni.</p>
 
-            <p>Várjuk szeretettel!</p>
-            <p>HGYE csapat</p>
+            <p><strong>Üdvözlettel,<br>
+            HGYE-vezetőség</strong></p>
+
+            <hr style="margin: 30px 0; border: none; border-top: 1px solid #ddd;">
+
+            <p style="font-size: 12px; color: #666;">
+              <strong>Technikai információk:</strong><br>
+              • Ez a link csak Önnek szól, ne ossza meg senkivel<br>
+              • Egy időben csak egy eszközről lehet bent<br>
+              • A link 30 napig érvényes
+            </p>
           </div>
           <div class="footer">
             <p>Ez egy automatikusan generált email. Kérjük, ne válaszoljon rá.</p>
@@ -195,19 +210,26 @@ function generateInvitationEmail(to: string, data: any, fromEmail: string, fromN
       </html>
     `,
     text: `
-      Kedves ${inviteeName || 'Résztvevő'}!
+      Kedves Kolléga!
 
-      Meghívjuk a HGYE webináriumra!
+      Köszönjük jelentkezését a ma (2025.09.23.), 18.00 órakor kezdődő "Tájékoztatás az oltásmegtagadók jogi támadásaival szembeni eljárásrendről" című HGYE webinárra, amelynek csatlakozási linkjét alább küldjük.
 
-      ${meetingDate ? `Dátum: ${meetingDate}` : ''}
-      ${meetingTime ? `Időpont: ${meetingTime}` : ''}
+      Csatlakozás a webináriumhoz: ${loginUrl}
 
-      Belépési link: ${loginUrl}
+      Fontos tudnivalók a webinárral kapcsolatban:
+      • A felületre történő csatlakozáskor/bejelentkezéskor kérjük, a teljes nevét adja meg.
+      • Kérjük, a mikrofont tartsa kikapcsolva, végig a webinár alatt.
+      • Amennyiben kérdése van az elhangzott előadásokkal kapcsolatban, kérjük, hogy a hgye@hgye.hu címünkre küldje meg, és eljuttatjuk az előadókhoz megválaszolásra.
 
-      Fontos: A link személyre szóló és nem továbbítható.
+      Bízunk benne, hogy a webináron elhangzó előadások az Ön számára is hasznos információkat fognak tartalmazni.
 
-      Várjuk szeretettel!
-      HGYE csapat
+      Üdvözlettel,
+      HGYE-vezetőség
+
+      Technikai információk:
+      • Ez a link csak Önnek szól, ne ossza meg senkivel
+      • Egy időben csak egy eszközről lehet bent
+      • A link 30 napig érvényes
     `
   };
 }
@@ -329,6 +351,90 @@ function generateReminderEmail(to: string, data: any, fromEmail: string, fromNam
   };
 }
 
+function generateDeviceVerificationEmail(to: string, data: any, fromEmail: string, fromName: string): EmailTemplate {
+  const { otpCode, deviceInfo, expiryMinutes = 10 } = data;
+
+  return {
+    to,
+    from: fromEmail,
+    subject: "Új eszközről történő belépés megerősítése - HGYE webinár",
+    html: `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Eszköz megerősítés</title>
+        <style>
+          body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+          .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+          .header { background: #F59E0B; color: white; padding: 20px; text-align: center; }
+          .content { padding: 20px; background: #ffffff; border: 1px solid #ddd; }
+          .otp-code { background: #FEF3C7; border: 2px solid #F59E0B; padding: 15px; text-align: center; font-size: 24px; font-weight: bold; margin: 20px 0; letter-spacing: 3px; }
+          .footer { text-align: center; color: #666; font-size: 12px; margin-top: 20px; }
+          .device-info { background: #f8f9fa; border-left: 4px solid #6c757d; padding: 10px; margin: 15px 0; font-size: 12px; }
+          .warning { background: #fff3cd; border-left: 4px solid #ffc107; padding: 15px; margin: 20px 0; }
+        </style>
+      </head>
+      <body>
+        <div class="container">
+          <div class="header">
+            <h1>🔐 Új eszköz megerősítése</h1>
+          </div>
+          <div class="content">
+            <h2>Kedves Kolléga!</h2>
+
+            <p>Új eszközről történő belépést észleltünk a HGYE webinárium belépési linkjénél.</p>
+
+            <div class="warning">
+              <strong>Biztonsági figyelmeztetés:</strong> Ha nem Ön próbál belépni, hagyja figyelmen kívül ezt az emailt és ne ossza meg a kódot senkivel.
+            </div>
+
+            <p>A belépéshez adja meg az alábbi megerősítő kódot:</p>
+
+            <div class="otp-code">${otpCode}</div>
+
+            <div class="device-info">
+              <strong>Eszköz információ:</strong><br>
+              ${deviceInfo || 'Ismeretlen eszköz'}
+            </div>
+
+            <p><strong>Fontos tudnivalók:</strong></p>
+            <ul>
+              <li>A kód ${expiryMinutes} percig érvényes</li>
+              <li>Sikeres megerősítés után ez az eszköz lesz hozzárendelve a belépési linkhez</li>
+              <li>Korábbi eszközök elvesztik a hozzáférést</li>
+              <li>Ne ossza meg ezt a kódot senkivel</li>
+            </ul>
+          </div>
+          <div class="footer">
+            <p>Ez egy automatikusan generált email. Kérjük, ne válaszoljon rá.</p>
+            <p>HGYE webinárium rendszer</p>
+          </div>
+        </div>
+      </body>
+      </html>
+    `,
+    text: `
+      Új eszköz megerősítése - HGYE webinár
+
+      Kedves Kolléga!
+
+      Új eszközről történő belépést észleltünk a HGYE webinárium belépési linkjénél.
+
+      Megerősítő kód: ${otpCode}
+
+      Eszköz információ: ${deviceInfo || 'Ismeretlen eszköz'}
+
+      A kód ${expiryMinutes} percig érvényes.
+
+      BIZTONSÁGI FIGYELMEZTETÉS: Ha nem Ön próbál belépni, hagyja figyelmen kívül ezt az emailt és ne ossza meg a kódot senkivel.
+
+      Sikeres megerősítés után ez az eszköz lesz hozzárendelve a belépési linkhez, korábbi eszközök elvesztik a hozzáférést.
+    `
+  };
+}
+
 async function sendEmailViaSendGrid(email: EmailTemplate, apiKey: string) {
   const payload: SendGridPayload = {
     personalizations: [
@@ -343,12 +449,12 @@ async function sendEmailViaSendGrid(email: EmailTemplate, apiKey: string) {
     },
     content: [
       {
-        type: "text/html",
-        value: email.html,
-      },
-      {
         type: "text/plain",
         value: email.text || email.html.replace(/<[^>]*>/g, ''),
+      },
+      {
+        type: "text/html",
+        value: email.html,
       },
     ],
   };

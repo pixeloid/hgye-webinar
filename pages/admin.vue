@@ -409,14 +409,8 @@ async function inviteBulk() {
 
 async function loadInvitees() {
   try {
-    // Use service role to bypass RLS for admin functions
-    const serviceSupabase = createClient(
-      useRuntimeConfig().public.supabaseUrl,
-      'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImV4cCI6MTk4MzgxMjk5Nn0.EGIM96RAZx35lJzdJsyH-qQwv8Hdp7fsn3W0YpN81IU',
-      { auth: { persistSession: false } }
-    );
-
-    const { data } = await serviceSupabase
+    // Use the authenticated client instead of hardcoded service role
+    const { data } = await supabase
       .from('invitees')
       .select('*')
       .order('created_at', { ascending: false });
@@ -526,10 +520,14 @@ function formatDate(dateString: string) {
 
 // Lifecycle
 onMounted(async () => {
-  // Check if user is authenticated
+  // Check if user is authenticated and is admin
   const { data: { user } } = await supabase.auth.getUser();
-  if (!user) {
-    await navigateTo('/login');
+
+  // Check for admin (simple check - in production use proper roles)
+  const isAdmin = sessionStorage.getItem('is_admin') === 'true';
+
+  if (!user || !isAdmin) {
+    await navigateTo('/admin-login');
     return;
   }
 

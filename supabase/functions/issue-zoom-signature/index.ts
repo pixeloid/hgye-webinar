@@ -14,47 +14,28 @@ serve(async (req) => {
   }
 
   try {
+    console.log('Token-based issue-zoom-signature called'); // Debug log
     // Initialize Supabase client with service role for admin operations
     const supabaseAdmin = createClient(
       Deno.env.get("SUPABASE_URL")!,
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
       {
-        global: {
-          headers: {
-            Authorization: req.headers.get("Authorization")!,
-          },
-        },
         auth: {
           persistSession: false,
         },
       }
     );
 
-    // Initialize Supabase client for user context
-    const supabase = createClient(
-      Deno.env.get("SUPABASE_URL")!,
-      Deno.env.get("SUPABASE_ANON_KEY")!,
-      {
-        global: {
-          headers: {
-            Authorization: req.headers.get("Authorization")!,
-          },
-        },
-        auth: {
-          persistSession: false,
-        },
-      }
-    );
+    // Parse request body to get the access token
+    const { accessToken, deviceHash, userAgent } = await req.json().catch(() => ({}));
+    const ip = req.headers.get("x-forwarded-for") || req.headers.get("cf-connecting-ip") || "unknown";
 
-    // Get the current user
-    const {
-      data: { user },
-      error: userErr,
-    } = await supabase.auth.getUser();
+    console.log('Received data:', { accessToken: accessToken ? 'present' : 'missing', deviceHash, userAgent });
 
-    if (userErr || !user) {
+    if (!accessToken) {
+      console.log('Missing access token');
       return new Response(
-        JSON.stringify({ error: "unauthorized" }),
+        JSON.stringify({ error: "unauthorized", message: "Access token required" }),
         {
           status: 401,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' }
@@ -62,26 +43,41 @@ serve(async (req) => {
       );
     }
 
-    // Parse request body
-    const { deviceHash, userAgent } = await req.json().catch(() => ({}));
-    const email = user.email!;
-    const ip = req.headers.get("x-forwarded-for") || req.headers.get("cf-connecting-ip") || "unknown";
-
-    // Fetch invitee record
+    // Fetch invitee record by access token
+    console.log('Looking up invitee with token:', accessToken);
     const { data: invitee, error: inviteeError } = await supabaseAdmin
       .from("invitees")
       .select("*")
-      .eq("email", email)
+      .eq("access_token", accessToken)
       .single();
+
+    console.log('Invitee lookup result:', { invitee: invitee ? 'found' : 'not found', error: inviteeError?.message });
 
     if (inviteeError || !invitee) {
       await supabaseAdmin.from("access_logs").insert({
         event_type: "join_denied",
-        meta: { email, reason: "not_invited", userAgent, deviceHash, ip },
+        meta: { accessToken, reason: "invalid_token", userAgent, deviceHash, ip },
       });
 
       return new Response(
-        JSON.stringify({ error: "forbidden", reason: "not_invited" }),
+        JSON.stringify({ error: "forbidden", reason: "invalid_token", message: "Érvénytelen vagy lejárt belépési link" }),
+        {
+          status: 403,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        }
+      );
+    }
+
+    // Check if token is expired
+    if (invitee.token_expires_at && new Date(invitee.token_expires_at) < new Date()) {
+      await supabaseAdmin.from("access_logs").insert({
+        invitee_id: invitee.id,
+        event_type: "join_denied",
+        meta: { reason: "token_expired", userAgent, deviceHash, ip },
+      });
+
+      return new Response(
+        JSON.stringify({ error: "forbidden", reason: "token_expired", message: "A belépési link lejárt" }),
         {
           status: 403,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' }
@@ -100,6 +96,83 @@ serve(async (req) => {
         JSON.stringify({ error: "forbidden", reason: "blocked" }),
         {
           status: 403,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        }
+      );
+    }
+
+    // Check for device binding - new device verification
+    const isFirstTime = !invitee.device_hash;
+    const isNewDevice = invitee.device_hash && invitee.device_hash !== deviceHash;
+
+    console.log('Device check:', {
+      isFirstTime,
+      isNewDevice,
+      storedHash: invitee.device_hash,
+      currentHash: deviceHash
+    });
+
+    if (isNewDevice) {
+      // This is a new device trying to use the token
+      console.log('New device detected, requesting email verification');
+
+      // Generate OTP for device verification
+      const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
+      const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
+
+      // Store OTP in otp_codes table
+      await supabaseAdmin.from("otp_codes").insert({
+        invitee_id: invitee.id,
+        code: otpCode,
+        purpose: "device_verification",
+        expires_at: expiresAt.toISOString(),
+        device_hash: deviceHash,
+        ip: ip,
+        user_agent: userAgent
+      });
+
+      // Send device verification email
+      try {
+        const emailResponse = await fetch(`${Deno.env.get("SUPABASE_URL")}/functions/v1/send-email`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            type: 'device_verification',
+            to: invitee.email,
+            templateData: {
+              otpCode,
+              deviceInfo: userAgent,
+              expiryMinutes: 10
+            }
+          }),
+        });
+
+        if (!emailResponse.ok) {
+          console.error('Device verification email sending failed');
+        }
+      } catch (emailError) {
+        console.error('Device verification email error:', emailError);
+      }
+
+      // Log device verification request
+      await supabaseAdmin.from("access_logs").insert({
+        invitee_id: invitee.id,
+        event_type: "device_verification_requested",
+        meta: { deviceHash, ip, userAgent, otpCode: otpCode.substring(0, 2) + "****" },
+      });
+
+      return new Response(
+        JSON.stringify({
+          error: "device_verification_required",
+          reason: "new_device",
+          message: "Új eszközről történő belépés megerősítése szükséges. Ellenőrizd az email-ed!",
+          debugOtp: process.env.NODE_ENV === 'development' ? otpCode : undefined
+        }),
+        {
+          status: 423,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' }
         }
       );
@@ -160,7 +233,7 @@ serve(async (req) => {
       .select()
       .single();
 
-    // Update invitee status if first join
+    // Update invitee status and device hash
     if (invitee.status === "invited") {
       await supabaseAdmin
         .from("invitees")
@@ -168,7 +241,16 @@ serve(async (req) => {
           status: "joined",
           first_seen_at: new Date().toISOString(),
           last_seen_at: new Date().toISOString(),
-          device_hash: deviceHash
+          device_hash: deviceHash  // Bind token to this device
+        })
+        .eq("id", invitee.id);
+    } else if (isFirstTime) {
+      // First time using token but status is not "invited" - still bind device
+      await supabaseAdmin
+        .from("invitees")
+        .update({
+          last_seen_at: new Date().toISOString(),
+          device_hash: deviceHash  // Bind token to this device
         })
         .eq("id", invitee.id);
     } else {
@@ -184,18 +266,24 @@ serve(async (req) => {
     const sdkKey = Deno.env.get("ZOOM_SDK_KEY")!;
     const sdkSecret = Deno.env.get("ZOOM_SDK_SECRET")!;
     const meetingNumberRaw = Deno.env.get("ZOOM_MEETING_NUMBER") || Deno.env.get("NUXT_PUBLIC_ZOOM_MEETING_NUMBER")!;
-    const meetingNumber = String(meetingNumberRaw).replace(/[^\d]/g, ''); // Clean meeting number
+    const meetingNumber = String(meetingNumberRaw).replace(/[^\d]/g, ''); // Clean meeting number to digits only
     const zoomPassword = Deno.env.get("ZOOM_PASSWORD") || "";
-    const role = 0; // participant
+    const role = 0; // participant (0 for meeting participant)
 
-    const userName = invitee.full_name || email.split("@")[0];
+    const userName = invitee.full_name || invitee.email.split("@")[0];
 
-    console.log('Generating signature for meeting:', meetingNumber, 'with SDK key:', sdkKey);
+    console.log('=== ZOOM MEETING DEBUG INFO ===');
+    console.log('Meeting Number (raw):', meetingNumberRaw);
+    console.log('Meeting Number (cleaned):', meetingNumber);
+    console.log('SDK Key:', sdkKey);
+    console.log('Password set:', zoomPassword ? 'YES' : 'NO');
+    console.log('User Name:', userName);
+    console.log('Role:', role, '(0=participant)');
 
     // JWT signature generation for Zoom Web SDK
-    // Based on official Zoom documentation
+    // Based on official Zoom documentation for Meeting SDK
     const iat = Math.floor(Date.now() / 1000) - 30;
-    const exp = iat + 60 * 60 * 2; // 2 hours (less than 48 hours)
+    const exp = iat + 60 * 60 * 2; // 2 hours (less than 48 hours max)
     const tokenExp = iat + 1800; // minimum 1800 seconds (30 minutes) ahead of iat
 
     const header = {
@@ -203,15 +291,20 @@ serve(async (req) => {
       typ: "JWT"
     };
 
+    // JWT payload for Zoom Meeting SDK
     const payload = {
       sdkKey: sdkKey,
-      mn: meetingNumber,
-      role: role,
+      mn: meetingNumber,  // meeting number (digits only)
+      role: role,         // 0 = participant
       iat: iat,
       exp: exp,
       tokenExp: tokenExp
     };
 
+    console.log('=== JWT GENERATION DEBUG ===');
+    console.log('IAT (issued at):', iat, new Date(iat * 1000).toISOString());
+    console.log('EXP (expires):', exp, new Date(exp * 1000).toISOString());
+    console.log('Token EXP:', tokenExp, new Date(tokenExp * 1000).toISOString());
     console.log('JWT Header:', JSON.stringify(header));
     console.log('JWT Payload:', JSON.stringify(payload));
 
@@ -254,8 +347,15 @@ serve(async (req) => {
     const signatureBase64Url = base64urlEncode(signatureBase64);
     const signature = `${data}.${signatureBase64Url}`;
 
+    console.log('=== SIGNATURE GENERATION RESULT ===');
     console.log('Generated signature length:', signature.length);
     console.log('Signature preview:', signature.substring(0, 50) + '...');
+    console.log('Full signature:', signature);
+    console.log('Meeting credentials to return:');
+    console.log('- SDK Key:', sdkKey);
+    console.log('- Meeting Number:', meetingNumber);
+    console.log('- User Name:', userName);
+    console.log('- Password:', zoomPassword || '(empty)');
 
     // Log successful signature generation
     await supabaseAdmin.from("access_logs").insert({
@@ -277,7 +377,7 @@ serve(async (req) => {
         sdkKey: sdkKey,
         meetingNumber: meetingNumber,
         userName: userName,
-        userEmail: email,
+        userEmail: invitee.email,
         passWord: zoomPassword,
         sessionId: newSession?.id,
         message: "Signature sikeresen generálva"
