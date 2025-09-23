@@ -78,8 +78,8 @@ serve(async (req) => {
 
     // Get SendGrid configuration
     const sendGridApiKey = Deno.env.get("SENDGRID_API_KEY");
-    const fromEmail = Deno.env.get("FROM_EMAIL") || "hgye@hgye.hu";
-    const fromName = Deno.env.get("FROM_NAME") || "HGYE Webinar";
+    const fromEmail = "hgye@hgye.hu";
+    const fromName = "HGYE Webinar";
 
     if (!sendGridApiKey) {
       throw new Error("SendGrid API key not configured");
